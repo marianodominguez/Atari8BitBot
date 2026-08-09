@@ -35,34 +35,51 @@ class BlueSkyApi:
         Self.logger.debug(f"Validated video file {filename} ({file_size} bytes)")
         return filename
 
-    def update_status(Self,text, media , msg):
-        post=msg.post
-
-        Self.logger.debug(f"REPLYING TO: {post}")
-
+    def update_status(Self, text, media, msg):
+        post = msg.post
         this_parent = models.create_strong_ref(post)
         this_root = models.create_strong_ref(post)
 
-        with open(media, 'rb') as video:
-            vid_data = video.read()
+        with open(media, 'rb') as f:
+            vid_data = f.read()
 
-        if len(vid_data) == 0:
-            raise ValueError(f"Video data is empty for file: {media}")
-
-        Self.logger.debug(f"Uploading video {media} ({len(vid_data)} bytes)")
-        status= Self.api.send_video(
-            text        =   text,
-            reply_to    =   models.AppBskyFeedPost.ReplyRef(parent=this_parent, root=this_root),
-            video       =   vid_data
+        # 1. Get a service auth token scoped for the video service
+        token = Self.api.com.atproto.server.get_service_auth(
+            params=models.ComAtprotoServerGetServiceAuth.Params(
+                aud=f'did:web:video.bsky.app',
+                lxm='app.bsky.video.uploadVideo',
+                exp=int(datetime.datetime.now(tz=ZoneInfo("UTC")).timestamp()) + 60 * 30,
             )
+        ).token
 
-        resp = Self.api.app.bsky.feed.get_post_thread(
-            params=models.AppBskyFeedGetPostThread.Params(
-                uri=status.uri
-            )
+        # 2. Upload to the dedicated video service (not repo.uploadBlob)
+        video_client = Client(base_url='https://video.bsky.app')
+        job = video_client.app.bsky.video.upload_video(
+            data=vid_data,
+            headers={'Authorization': f'Bearer {token}'},
         )
-        Self.logger.info(f"Response: {resp.thread.post.record.embed}")
-        return status
+        Self.logger.debug(f"Video job started: {job.job_status.job_id}, state={job.job_status.state}")
+
+        # 3. Poll until transcoding actually finishes
+        import time
+        status = job.job_status
+        while status.state not in ('JOB_STATE_COMPLETED', 'JOB_STATE_FAILED'):
+            time.sleep(2)
+            status = Self.api.app.bsky.video.get_job_status(
+                params=models.AppBskyVideoGetJobStatus.Params(job_id=status.job_id)
+            ).job_status
+            Self.logger.debug(f"Job status: {status.state}")
+
+        if status.state == 'JOB_STATE_FAILED':
+            raise RuntimeError(f"Video transcoding failed: {status.error}")
+
+        # 4. Now create the post with the *processed* blob
+        embed = models.AppBskyEmbedVideo.Main(video=status.blob, alt='')
+        return Self.api.send_post(
+            text=text,
+            embed=embed,
+            reply_to=models.AppBskyFeedPost.ReplyRef(parent=this_parent, root=this_root),
+        )
 
     def reply(Self, status, text):
         msg=" "
