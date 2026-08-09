@@ -275,14 +275,34 @@ def check_mentions(api, since_id):
             post_result = api.update_status(text, media, message)
             logger.info(f"Post result: {post_result}")
         except Exception as e:
+            handled = False
+            # If this is an HTTP error, try to inspect the response body for
+            # the video service's explicit daily limit signal.
+            resp = getattr(e, 'response', None)
+            if resp is not None:
+                try:
+                    body = resp.json()
+                    if isinstance(body, dict):
+                        if body.get('error') == 'daily_vid_limit_exceeded':
+                            logger.warning("Daily video/upload limit reached; sleeping for 1 hour")
+                            time.sleep(3600)
+                            handled = True
+                except Exception:
+                    # ignore parse errors and fall back to string checks
+                    pass
+
+            if handled:
+                continue
+
+            # Fallback: check exception string for common indicators
             errstr = str(e).lower()
-            if any(k in errstr for k in ("daily", "limit", "quota", "limit reached", "rate limit", "429")):
+            if any(k in errstr for k in ("daily", "limit", "quota", "limit reached", "rate limit", "429", "401", "daily_vid_limit_exceeded")):
                 logger.warning("Daily video/upload limit reached; sleeping for 1 hour")
                 time.sleep(3600)
                 continue
-            else:
-                logger.exception("Failed to post message; skipping this message")
-                continue
+
+            logger.exception("Failed to post message; skipping this message")
+            continue
 
     return new_since_id
 
