@@ -10,19 +10,29 @@ from zoneinfo import ZoneInfo
 
 from types import SimpleNamespace
 
+from requests import session
+
 class BlueSkyApi:
-    logging.basicConfig(level=logging.DEBUG)
-    logger = logging.getLogger()
+    logger = logging.getLogger(__name__)
     api = None
 
     def get_api(Self, client_id, client_secret, access_token, access_token_secret):
         c=Client()
         c.login(client_id, client_secret)
         Self.api=c
+
+        session = Self.api.com.atproto.server.get_session()
+        Self.logger.info(f"Session: {session.email_confirmed}")
+
         return Self.api
 
     def media_upload(Self,filename):
-        #just validate the videa file as reply does it
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f"Video file does not exist: {filename}")
+        file_size = os.path.getsize(filename)
+        if file_size == 0:
+            raise ValueError(f"Video file is empty: {filename}")
+        Self.logger.debug(f"Validated video file {filename} ({file_size} bytes)")
         return filename
 
     def update_status(Self,text, media , msg):
@@ -33,14 +43,25 @@ class BlueSkyApi:
         this_parent = models.create_strong_ref(post)
         this_root = models.create_strong_ref(post)
 
-        video = open(media, 'rb')
-        vid_data = video.read()
-    
+        with open(media, 'rb') as video:
+            vid_data = video.read()
+
+        if len(vid_data) == 0:
+            raise ValueError(f"Video data is empty for file: {media}")
+
+        Self.logger.debug(f"Uploading video {media} ({len(vid_data)} bytes)")
         status= Self.api.send_video(
             text        =   text,
             reply_to    =   models.AppBskyFeedPost.ReplyRef(parent=this_parent, root=this_root),
             video       =   vid_data
             )
+
+        resp = Self.api.app.bsky.feed.get_post_thread(
+            params=models.AppBskyFeedGetPostThread.Params(
+                uri=status.uri
+            )
+        )
+        Self.logger.info(f"Response: {resp.thread.post.record.embed}")
         return status
 
     def reply(Self, status, text):

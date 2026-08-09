@@ -226,15 +226,46 @@ def check_mentions(api, since_id):
         if backend=="twitter":
             scale=""
 
+        import subprocess
+
         logger.info("Converting video")
-        result = os.system(f'ffmpeg -loglevel warning -y -i working/atari800_output.avi -vcodec libx264 -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2{scale}" -pix_fmt yuv420p -strict experimental -r 30 -t 2:20 -acodec aac -vb 1024k -minrate 1024k -maxrate 1024k -bufsize 1024k -ar 44100 -ac 2 working/OUTPUT_SMALL.mp4')
-        #per https://gist.github.com/nikhan/26ddd9c4e99bbf209dd7#gistcomment-3232972
+        ffmpeg_cmd = [
+            'ffmpeg',
+            '-loglevel', 'warning',
+            '-y',
+            '-i', 'working/atari800_output.avi',
+            '-vcodec', 'libx264',
+            '-vf', f'pad=ceil(iw/2)*2:ceil(ih/2)*2{scale}',
+            '-pix_fmt', 'yuv420p',
+            '-strict', 'experimental',
+            '-r', '30',
+            '-t', '2:20',
+            '-acodec', 'aac',
+            '-vb', '1024k',
+            '-minrate', '1024k',
+            '-maxrate', '1024k',
+            '-bufsize', '1024k',
+            '-ar', '44100',
+            '-ac', '2',
+            'working/OUTPUT_SMALL.mp4'
+        ]
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error(f"ffmpeg failed: {result.returncode} stdout={result.stdout} stderr={result.stderr}")
+            raise RuntimeError("Video conversion failed; aborting upload")
 
-        logger.info("Uploading video")
+        output_path = "working/OUTPUT_SMALL.mp4"
+        if not os.path.exists(output_path):
+            raise FileNotFoundError(f"Converted video not found: {output_path}")
+        output_size = os.path.getsize(output_path)
+        if output_size == 0:
+            raise ValueError(f"Converted video is empty: {output_path}")
 
-        media = api.media_upload("working/OUTPUT_SMALL.mp4")
+        logger.info(f"Uploading video {output_path} ({output_size} bytes)")
 
-        logger.debug(f"Media ID is {media}")
+        media = api.media_upload(output_path)
+
+        logger.info(f"Media ID is {media}")
 
         time.sleep(5)
 
@@ -242,7 +273,7 @@ def check_mentions(api, since_id):
         text = f"I ran {message.user.screen_name} ( @{message.user.name} ) code and got:"
         post_result = api.update_status(text, media, message)
 
-        logger.info("Done!")
+        logger.info(f"Post result: {post_result}")
 
     return new_since_id
 

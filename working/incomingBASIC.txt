@@ -1,0 +1,3 @@
+10 ? "TESTING TESTING"
+20 pause 100
+30 G.10
