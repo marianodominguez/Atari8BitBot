@@ -29,6 +29,9 @@ class BlueSkyApi:
         session = Self.api.com.atproto.server.get_session()
         Self.logger.info(f"Email confirmed: {session.email_confirmed}")
 
+        limits = Self.api.app.bsky.video.get_upload_limits()
+        Self.logger.info(f"Upload limits: {limits}")
+
         return Self.api
 
     def media_upload(Self,filename):
