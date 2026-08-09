@@ -10,6 +10,8 @@ import re
 import os
 import datetime
 from zoneinfo import ZoneInfo
+import httpx
+
 
 from types import SimpleNamespace
 
@@ -38,8 +40,8 @@ class BlueSkyApi:
         Self.logger.debug(f"Validated video file {filename} ({file_size} bytes)")
         return filename
 
-
     def _get_pds_did(Self):
+        from atproto_client.client.session import get_session_pds_endpoint
         endpoint = get_session_pds_endpoint(Self.api._session)
         host = endpoint.split('://')[1].rstrip('/')
         return f"did:web:{host}"
@@ -54,37 +56,47 @@ class BlueSkyApi:
 
         pds_did = Self._get_pds_did()
 
-        # 1. Service auth token audience = your own PDS, not video.bsky.app
+        # 1. Service auth token — lxm is com.atproto.repo.uploadBlob (the video
+        #    service just proxies the upload through to your PDS as a blob)
         token = Self.api.com.atproto.server.get_service_auth(
             params=models.ComAtprotoServerGetServiceAuth.Params(
                 aud=pds_did,
-                lxm='app.bsky.video.uploadVideo',
+                lxm='com.atproto.repo.uploadBlob',
                 exp=int(datetime.datetime.now(tz=ZoneInfo("UTC")).timestamp()) + 60 * 30,
             )
         ).token
 
-        # 2. Upload still goes to the video service host itself
-        video_client = Client('https://video.bsky.app')
-        video_client._set_auth_headers(token)  # or: request(..., headers={'Authorization': f'Bearer {token}'})
+        # 2. Plain HTTP POST to the video service — no SDK Client needed here
+        upload_url = "https://video.bsky.app/xrpc/app.bsky.video.uploadVideo"
+        params = {"did": Self.api.me.did, "name": os.path.basename(media)}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "video/mp4",
+        }
+        resp = httpx.post(upload_url, params=params, headers=headers, content=vid_data, timeout=60)
+        resp.raise_for_status()
+        job_status = resp.json()
+        Self.logger.debug(f"Video job started: {job_status}")
 
-        job = video_client.app.bsky.video.upload_video(data=vid_data)
-        Self.logger.debug(f"Video job started: {job.job_status.job_id}, state={job.job_status.state}")
-
-        # 3. Poll for completion — get_job_status is a public unauthenticated call
+        # 3. Poll for completion via the SDK (this call is a normal authed GET)
         import time
-        status = job.job_status
-        while status.state not in ('JOB_STATE_COMPLETED', 'JOB_STATE_FAILED'):
+        job_id = job_status["jobId"]
+        state = job_status.get("state")
+        blob = job_status.get("blob")
+        while not blob and state not in ("JOB_STATE_FAILED",):
             time.sleep(2)
             status = Self.api.app.bsky.video.get_job_status(
-                params=models.AppBskyVideoGetJobStatus.Params(job_id=status.job_id)
+                params=models.AppBskyVideoGetJobStatus.Params(job_id=job_id)
             ).job_status
-            Self.logger.debug(f"Job status: {status.state} progress={status.progress}")
+            state = status.state
+            blob = status.blob
+            Self.logger.debug(f"Job status: {state}")
 
-        if status.state == 'JOB_STATE_FAILED':
-            raise RuntimeError(f"Video transcoding failed: {status.error}")
+        if not blob:
+            raise RuntimeError(f"Video transcoding failed: state={state}")
 
         # 4. Post with the fully-processed blob
-        embed = models.AppBskyEmbedVideo.Main(video=status.blob, alt='')
+        embed = models.AppBskyEmbedVideo.Main(video=blob, alt='')
         return Self.api.send_post(
             text=text,
             embed=embed,
