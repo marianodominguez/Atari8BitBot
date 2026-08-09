@@ -48,6 +48,20 @@ class BlueSkyApi:
             resp = _request_limits_with_aud("did:web:video.bsky.app")
 
         if resp.status_code != 200:
+            # Try to parse error body; some 401 responses include structured JSON
+            try:
+                body = resp.json()
+            except Exception:
+                Self.logger.error(f"Failed to get upload limits: {resp.status_code} {resp.text}")
+                resp.raise_for_status()
+
+            # If the service explicitly reports daily upload limit exceeded, return
+            # the body instead of raising so callers can continue running and
+            # decide how to behave (e.g., skip uploads or sleep).
+            if isinstance(body, dict) and body.get("error") == "daily_vid_limit_exceeded":
+                Self.logger.warning(f"Daily upload limit exceeded: {body.get('message')}")
+                return body
+
             Self.logger.error(f"Failed to get upload limits: {resp.status_code} {resp.text}")
             resp.raise_for_status()
 
