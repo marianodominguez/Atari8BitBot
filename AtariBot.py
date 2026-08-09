@@ -271,9 +271,18 @@ def check_mentions(api, since_id):
 
         logger.info(f"Posting message to @{message.user.name}")
         text = f"I ran {message.user.screen_name} ( @{message.user.name} ) code and got:"
-        post_result = api.update_status(text, media, message)
-
-        logger.info(f"Post result: {post_result}")
+        try:
+            post_result = api.update_status(text, media, message)
+            logger.info(f"Post result: {post_result}")
+        except Exception as e:
+            errstr = str(e).lower()
+            if any(k in errstr for k in ("daily", "limit", "quota", "limit reached", "rate limit", "429")):
+                logger.warning("Daily video/upload limit reached; sleeping for 1 hour")
+                time.sleep(3600)
+                continue
+            else:
+                logger.exception("Failed to post message; skipping this message")
+                continue
 
     return new_since_id
 

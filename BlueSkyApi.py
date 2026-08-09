@@ -21,6 +21,25 @@ class BlueSkyApi:
     logger = logging.getLogger(__name__)
     api = None
 
+    def get_upload_limits(Self):
+        pds_did = Self._get_pds_did()
+
+        token = Self.api.com.atproto.server.get_service_auth(
+            params=models.ComAtprotoServerGetServiceAuth.Params(
+                aud=pds_did,
+                lxm='app.bsky.video.getUploadLimits',
+                exp=int(datetime.datetime.now(tz=ZoneInfo("UTC")).timestamp()) + 60 * 30,
+            )
+        ).token
+
+        resp = httpx.get(
+            "https://video.bsky.app/xrpc/app.bsky.video.getUploadLimits",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def get_api(Self, client_id, client_secret, access_token, access_token_secret):
         c=Client()
         c.login(client_id, client_secret)
@@ -29,7 +48,7 @@ class BlueSkyApi:
         session = Self.api.com.atproto.server.get_session()
         Self.logger.info(f"Email confirmed: {session.email_confirmed}")
 
-        limits = Self.api.app.bsky.video.get_upload_limits()
+        limits = Self.get_upload_limits()
         Self.logger.info(f"Upload limits: {limits}")
 
         return Self.api
