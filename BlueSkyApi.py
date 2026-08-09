@@ -24,20 +24,34 @@ class BlueSkyApi:
     def get_upload_limits(Self):
         pds_did = Self._get_pds_did()
 
-        token = Self.api.com.atproto.server.get_service_auth(
-            params=models.ComAtprotoServerGetServiceAuth.Params(
-                aud=pds_did,
-                lxm='app.bsky.video.getUploadLimits',
-                exp=int(datetime.datetime.now(tz=ZoneInfo("UTC")).timestamp()) + 60 * 30,
-            )
-        ).token
+        def _request_limits_with_aud(aud: str):
+            token = Self.api.com.atproto.server.get_service_auth(
+                params=models.ComAtprotoServerGetServiceAuth.Params(
+                    aud=aud,
+                    lxm='app.bsky.video.getUploadLimits',
+                    exp=int(datetime.datetime.now(tz=ZoneInfo("UTC")).timestamp()) + 60 * 30,
+                )
+            ).token
 
-        resp = httpx.get(
-            "https://video.bsky.app/xrpc/app.bsky.video.getUploadLimits",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30,
-        )
-        resp.raise_for_status()
+            url = "https://video.bsky.app/xrpc/app.bsky.video.getUploadLimits"
+            headers = {"Authorization": f"Bearer {token}"}
+            Self.logger.debug(f"Requesting upload limits with aud={aud}")
+            return httpx.get(url, headers=headers, timeout=30)
+
+        # Try with the PDS-derived did first
+        resp = _request_limits_with_aud(pds_did)
+
+        # If the video service rejects the token (401), retry using the well-known
+        # video service DID as the audience. Some deployments expect aud=did:web:video.bsky.app.
+        if resp.status_code == 401 and pds_did != "did:web:video.bsky.app":
+            Self.logger.warning("Upload limits request returned 401; retrying with did:web:video.bsky.app as aud")
+            resp = _request_limits_with_aud("did:web:video.bsky.app")
+
+        if resp.status_code != 200:
+            Self.logger.error(f"Failed to get upload limits: {resp.status_code} {resp.text}")
+            resp.raise_for_status()
+
+        Self.logger.debug("Successfully retrieved upload limits")
         return resp.json()
 
     def get_api(Self, client_id, client_secret, access_token, access_token_secret):
