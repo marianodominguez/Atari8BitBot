@@ -2,6 +2,7 @@
 from typing import Self
 
 from atproto import Client, client_utils
+from atproto_client.client.session import get_session_pds_endpoint
 from atproto_client import models
 from bs4 import BeautifulSoup as bs
 import logging
@@ -37,10 +38,10 @@ class BlueSkyApi:
         Self.logger.debug(f"Validated video file {filename} ({file_size} bytes)")
         return filename
 
+
     def _get_pds_did(Self):
-        """Derive the current PDS's DID from the active session's service endpoint."""
-        host = Self.api._session.data.pds_endpoint  # e.g. 'https://blusher.us-east.host.bsky.network'
-        host = host.split('://')[1].rstrip('/')
+        endpoint = get_session_pds_endpoint(Self.api._session)
+        host = endpoint.split('://')[1].rstrip('/')
         return f"did:web:{host}"
 
     def update_status(Self, text, media, msg):
