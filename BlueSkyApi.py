@@ -27,7 +27,7 @@ class BlueSkyApi:
         Self.api=c
 
         session = Self.api.com.atproto.server.get_session()
-        Self.logger.info(f"Session: {session.email_confirmed}")
+        Self.logger.info(f"Email confirmed: {session.email_confirmed}")
 
         return Self.api
 
@@ -73,7 +73,10 @@ class BlueSkyApi:
             "Authorization": f"Bearer {token}",
             "Content-Type": "video/mp4",
         }
+
         resp = httpx.post(upload_url, params=params, headers=headers, content=vid_data, timeout=60)
+        if resp.status_code != 200:
+            Self.logger.error(f"Video upload failed ({resp.status_code}): {resp.text}")
         resp.raise_for_status()
         job_status = resp.json()
         Self.logger.debug(f"Video job started: {job_status}")
