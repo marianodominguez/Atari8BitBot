@@ -20,6 +20,11 @@ def check_mentions(api, since_id):
     new_since_id = since_id
     for message in api.get_replies(since_id):
         new_since_id = max(message.id, new_since_id)
+        try:
+            new_since_id = int(new_since_id)
+        except Exception:
+            logger.debug(f"could not convert new_since_id to int: {new_since_id}")
+        logger.debug(f"new_since_id updated to {new_since_id}")
 
         logger.info(f"Message from {message.user.name}")
 
@@ -304,7 +309,11 @@ def check_mentions(api, since_id):
             logger.exception("Failed to post message; skipping this message")
             continue
 
-    return new_since_id
+    logger.info(f"check_mentions returning new_since_id={new_since_id} (type={type(new_since_id)})")
+    try:
+        return int(new_since_id)
+    except Exception:
+        return new_since_id
 
 def main():
     home = os.getenv('RUN_HOME')
