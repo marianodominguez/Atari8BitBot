@@ -204,6 +204,14 @@ class BlueSkyApi:
     def get_replies(Self, since_id):
         replies={}
         result = []
+        seen_cids = set()
+        try:
+            if os.path.exists('seen_cids.txt'):
+                with open('seen_cids.txt','r') as f:
+                    for line in f:
+                        seen_cids.add(line.strip())
+        except Exception:
+            Self.logger.debug('Could not read seen_cids.txt')
         since_date= datetime.datetime.fromtimestamp(since_id/1000, tz=ZoneInfo("UTC"))
 
         Self.logger.info(since_date.isoformat(timespec='milliseconds'))
@@ -232,11 +240,19 @@ class BlueSkyApi:
                 Self.logger.debug(f"Skipping post older-or-equal to since_id: created_at={post.record.created_at} post_ms={post_ms} since_id={since_id} (types: post_ms={type(post_ms)}, since_id={type(since_id)})")
                 continue
 
+            # Skip if we've already handled this cid
+            cid = getattr(post, 'cid', None)
+            if cid and cid in seen_cids:
+                Self.logger.debug(f"Skipping post because cid seen: {cid}")
+                continue
+
             # offset 1000 milliseconds to avoid getting the same message
             status.id = int(post_ms + 1000)
             Self.logger.debug(f"Including post: created_at={post.record.created_at} post_ms={post_ms} status.id={status.id}")
             # status.id = post.cid
             status.entities = {}
+            # expose cid so callers can persist it after replying
+            status.cid = getattr(post, 'cid', None)
             if 'urls' in message.keys():
                 if 'urls' not in status.entities.keys():
                     status.entities['urls'] = []
