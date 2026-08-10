@@ -19,7 +19,7 @@ def check_mentions(api, since_id):
     logger.info("Retrieving mentions")
     new_since_id = since_id
     for message in api.get_replies(since_id):
-        new_since_id = max(message.id, new_since_id)
+        new_since_id = max(int(message.id)+100, new_since_id)
         try:
             new_since_id = int(new_since_id)
         except Exception:
