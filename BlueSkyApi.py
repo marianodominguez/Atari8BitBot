@@ -218,24 +218,33 @@ class BlueSkyApi:
 
         Self.logger.debug(f"result: {result}")
         for post in result:
-            #parse the message to extract entities
-            message=Self.extract_entities(post.record.text)
-            status=SimpleNamespace()
-            status.post=post
-            ts=datetime.datetime.fromisoformat(post.record.created_at)
-            #offset 100 milliseconds to avoid getting the same message
-            status.id = int( ts.timestamp()*1000 + 100)
-            #status.id=post.cid
-            status.entities={}
+            # parse the message to extract entities
+            message = Self.extract_entities(post.record.text)
+            status = SimpleNamespace()
+            status.post = post
+
+            # created_at -> datetime -> milliseconds
+            ts = datetime.datetime.fromisoformat(post.record.created_at)
+            post_ms = int(ts.timestamp() * 1000)
+
+            # If the search API returned posts older than since_id, skip them.
+            if post_ms <= since_id:
+                Self.logger.debug(f"Skipping post older-or-equal to since_id: post_ms={post_ms} since_id={since_id}")
+                continue
+
+            # offset 100 milliseconds to avoid getting the same message
+            status.id = int(post_ms + 100)
+            # status.id = post.cid
+            status.entities = {}
             if 'urls' in message.keys():
                 if 'urls' not in status.entities.keys():
-                    status.entities['urls']=[]
-                status.entities['urls']=message['urls']
-            status.user=SimpleNamespace()
-            status.user.screen_name=post.author.display_name
-            status.user.name=post.author.handle
-            status.full_text=message['text'].strip()
-            replies[status.id]=status
+                    status.entities['urls'] = []
+                status.entities['urls'] = message['urls']
+            status.user = SimpleNamespace()
+            status.user.screen_name = post.author.display_name
+            status.user.name = post.author.handle
+            status.full_text = message['text'].strip()
+            replies[status.id] = status
             Self.logger.debug(f"status: {status.id}")
         Self.logger.info(f"replies: {replies}")
         return replies.values()
