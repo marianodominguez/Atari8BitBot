@@ -229,11 +229,12 @@ class BlueSkyApi:
 
             # If the search API returned posts older than since_id, skip them.
             if post_ms <= since_id:
-                Self.logger.debug(f"Skipping post older-or-equal to since_id: post_ms={post_ms} since_id={since_id}")
+                Self.logger.debug(f"Skipping post older-or-equal to since_id: created_at={post.record.created_at} post_ms={post_ms} since_id={since_id} (types: post_ms={type(post_ms)}, since_id={type(since_id)})")
                 continue
 
-            # offset 100 milliseconds to avoid getting the same message
-            status.id = int(post_ms + 100)
+            # offset 1000 milliseconds to avoid getting the same message
+            status.id = int(post_ms + 1000)
+            Self.logger.debug(f"Including post: created_at={post.record.created_at} post_ms={post_ms} status.id={status.id}")
             # status.id = post.cid
             status.entities = {}
             if 'urls' in message.keys():
