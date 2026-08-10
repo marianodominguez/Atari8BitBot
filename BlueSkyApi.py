@@ -210,6 +210,7 @@ class BlueSkyApi:
                 with open('seen_cids.txt','r') as f:
                     for line in f:
                         seen_cids.add(line.strip())
+            Self.logger.info(f"Loaded {len(seen_cids)} seen cids")
         except Exception:
             Self.logger.debug('Could not read seen_cids.txt')
         since_date= datetime.datetime.fromtimestamp(since_id/1000, tz=ZoneInfo("UTC"))

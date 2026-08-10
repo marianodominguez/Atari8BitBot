@@ -19,7 +19,7 @@ def check_mentions(api, since_id):
     logger.info("Retrieving mentions")
     new_since_id = since_id
     for message in api.get_replies(since_id):
-        new_since_id = max(int(message.id)+100, new_since_id)
+        new_since_id = max(int(message.id), new_since_id)
         try:
             new_since_id = int(new_since_id)
         except Exception:
@@ -285,9 +285,10 @@ def check_mentions(api, since_id):
                 if cid:
                     with open('seen_cids.txt','a') as sc:
                         sc.write(cid + "\n")
-                    logger.debug(f"Recorded seen cid: {cid}")
+                        sc.flush()
+                    logger.info(f"Recorded seen cid: {cid}")
             except Exception:
-                logger.debug("Could not record seen cid")
+                logger.exception("Could not record seen cid")
         except Exception as e:
             handled = False
             # If this is an HTTP error, try to inspect the response body for
