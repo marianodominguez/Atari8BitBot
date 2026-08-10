@@ -140,18 +140,34 @@ class BlueSkyApi:
             job_status = resp.json()
         Self.logger.debug(f"Video job started: {job_status}")
 
-        # 3. Poll for completion via the SDK (this call is a normal authed GET)
+        # 3. Poll for completion via the video service endpoint.
         import time
         job_id = job_status["jobId"]
         state = job_status.get("state")
         blob = job_status.get("blob")
+
+        def request_job_status(job_id: str):
+            token = Self.api.com.atproto.server.get_service_auth(
+                params=models.ComAtprotoServerGetServiceAuth.Params(
+                    aud=pds_did,
+                    lxm='app.bsky.video.getJobStatus',
+                    exp=int(datetime.datetime.now(tz=ZoneInfo("UTC")).timestamp()) + 60 * 30,
+                )
+            ).token
+            status_url = "https://video.bsky.app/xrpc/app.bsky.video.getJobStatus"
+            headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+            resp = httpx.get(status_url, params={"jobId": job_id}, headers=headers, timeout=30)
+            if resp.status_code != 200:
+                Self.logger.error(f"Video job status failed ({resp.status_code}): {resp.text}")
+                resp.raise_for_status()
+            result = resp.json()
+            return result.get("jobStatus") or result.get("job_status") or result
+
         while not blob and state not in ("JOB_STATE_FAILED",):
             time.sleep(2)
-            status = Self.api.app.bsky.video.get_job_status(
-                params=models.AppBskyVideoGetJobStatus.Params(job_id=job_id)
-            ).job_status
-            state = status.state
-            blob = status.blob
+            status = request_job_status(job_id)
+            state = getattr(status, 'state', status.get('state')) if isinstance(status, dict) else status.state
+            blob = getattr(status, 'blob', status.get('blob')) if isinstance(status, dict) else status.blob
             Self.logger.debug(f"Job status: {state}")
 
         if not blob:
