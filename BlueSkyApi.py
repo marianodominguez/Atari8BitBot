@@ -225,7 +225,7 @@ class BlueSkyApi:
         )
         result.extend(response.posts)
 
-        Self.logger.debug(f"result: {result}")
+        Self.logger.info(f"result: {result}")
         for post in result:
             # parse the message to extract entities
             message = Self.extract_entities(post.record.text)
@@ -235,25 +235,27 @@ class BlueSkyApi:
             # created_at -> datetime -> milliseconds
             ts = datetime.datetime.fromisoformat(post.record.created_at)
             post_ms = int(ts.timestamp() * 1000)
+            cid = getattr(post, 'cid', None)
+
+            Self.logger.info(f"post cid={cid} created_at={post.record.created_at} post_ms={post_ms}")
 
             # If the search API returned posts older than since_id, skip them.
             if post_ms <= since_id:
-                Self.logger.debug(f"Skipping post older-or-equal to since_id: created_at={post.record.created_at} post_ms={post_ms} since_id={since_id} (types: post_ms={type(post_ms)}, since_id={type(since_id)})")
+                Self.logger.info(f"Skipping post older-or-equal to since_id: cid={cid} created_at={post.record.created_at} post_ms={post_ms} since_id={since_id}")
                 continue
 
             # Skip if we've already handled this cid
-            cid = getattr(post, 'cid', None)
             if cid and cid in seen_cids:
-                Self.logger.debug(f"Skipping post because cid seen: {cid}")
+                Self.logger.info(f"Skipping post because cid seen: {cid}")
                 continue
 
             # offset 1000 milliseconds to avoid getting the same message
-            status.id = int(post_ms + 1000)
-            Self.logger.debug(f"Including post: created_at={post.record.created_at} post_ms={post_ms} status.id={status.id}")
+            status.id = max(int(post_ms + 1000), since_id + 1)
+            Self.logger.info(f"Including post: cid={cid} created_at={post.record.created_at} post_ms={post_ms} status.id={status.id}")
             # status.id = post.cid
             status.entities = {}
             # expose cid so callers can persist it after replying
-            status.cid = getattr(post, 'cid', None)
+            status.cid = cid
             if 'urls' in message.keys():
                 if 'urls' not in status.entities.keys():
                     status.entities['urls'] = []
