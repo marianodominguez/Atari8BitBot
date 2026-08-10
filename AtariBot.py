@@ -281,14 +281,14 @@ def check_mentions(api, since_id):
             logger.info(f"Post result: {post_result}")
             # record that we've processed this post to avoid duplicates
             try:
-                cid = getattr(message.post, 'cid', None)
-                if cid:
+                post_key = getattr(message, 'post_key', None)
+                if post_key:
                     with open('seen_cids.txt','a') as sc:
-                        sc.write(cid + "\n")
+                        sc.write(post_key + "\n")
                         sc.flush()
-                    logger.info(f"Recorded seen cid: {cid}")
+                    logger.info(f"Recorded seen key: {post_key}")
             except Exception:
-                logger.exception("Could not record seen cid")
+                logger.exception("Could not record seen key")
         except Exception as e:
             handled = False
             # If this is an HTTP error, try to inspect the response body for

@@ -204,28 +204,31 @@ class BlueSkyApi:
     def get_replies(Self, since_id):
         replies={}
         result = []
-        seen_cids = set()
+        seen_keys = set()
         try:
             if os.path.exists('seen_cids.txt'):
                 with open('seen_cids.txt','r') as f:
                     for line in f:
-                        seen_cids.add(line.strip())
-            Self.logger.info(f"Loaded {len(seen_cids)} seen cids")
+                        seen_keys.add(line.strip())
+            Self.logger.info(f"Loaded {len(seen_keys)} seen keys")
         except Exception:
             Self.logger.debug('Could not read seen_cids.txt')
-        since_date= datetime.datetime.fromtimestamp(since_id/1000, tz=ZoneInfo("UTC"))
+        since_date = datetime.datetime.fromtimestamp(since_id/1000, tz=ZoneInfo("UTC"))
+        since_iso = since_date.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+00:00"
 
-        Self.logger.info(since_date.isoformat(timespec='milliseconds'))
+        Self.logger.info(f"search since={since_iso}")
 
         response = Self.api.app.bsky.feed.search_posts(
             params = models.AppBskyFeedSearchPosts.Params(
                 q="#atari8bitbot",
-                since=since_date.isoformat(timespec='milliseconds')
+                since=since_iso,
+                sort='latest',
+                limit=50,
             )
         )
         result.extend(response.posts)
 
-        Self.logger.info(f"result: {result}")
+        Self.logger.info(f"result count: {len(result)}")
         for post in result:
             # parse the message to extract entities
             message = Self.extract_entities(post.record.text)
@@ -236,26 +239,26 @@ class BlueSkyApi:
             ts = datetime.datetime.fromisoformat(post.record.created_at)
             post_ms = int(ts.timestamp() * 1000)
             cid = getattr(post, 'cid', None)
+            fallback_key = f"{post.author.did}:{post.record.created_at}"
+            post_key = cid or fallback_key
 
-            Self.logger.info(f"post cid={cid} created_at={post.record.created_at} post_ms={post_ms}")
+            Self.logger.info(f"post key={post_key} created_at={post.record.created_at} post_ms={post_ms}")
+
+            # Skip if we've already handled this post
+            if post_key in seen_keys:
+                Self.logger.info(f"Skipping post because seen key exists: {post_key}")
+                continue
 
             # If the search API returned posts older than since_id, skip them.
             if post_ms <= since_id:
-                Self.logger.info(f"Skipping post older-or-equal to since_id: cid={cid} created_at={post.record.created_at} post_ms={post_ms} since_id={since_id}")
+                Self.logger.info(f"Skipping post older-or-equal to since_id: key={post_key} created_at={post.record.created_at} post_ms={post_ms} since_id={since_id}")
                 continue
 
-            # Skip if we've already handled this cid
-            if cid and cid in seen_cids:
-                Self.logger.info(f"Skipping post because cid seen: {cid}")
-                continue
-
-            # offset 1000 milliseconds to avoid getting the same message
             status.id = max(int(post_ms + 1000), since_id + 1)
-            Self.logger.info(f"Including post: cid={cid} created_at={post.record.created_at} post_ms={post_ms} status.id={status.id}")
-            # status.id = post.cid
+            Self.logger.info(f"Including post: key={post_key} created_at={post.record.created_at} post_ms={post_ms} status.id={status.id}")
             status.entities = {}
-            # expose cid so callers can persist it after replying
             status.cid = cid
+            status.post_key = post_key
             if 'urls' in message.keys():
                 if 'urls' not in status.entities.keys():
                     status.entities['urls'] = []
