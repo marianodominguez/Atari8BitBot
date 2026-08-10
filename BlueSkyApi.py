@@ -125,10 +125,19 @@ class BlueSkyApi:
         }
 
         resp = httpx.post(upload_url, params=params, headers=headers, content=vid_data, timeout=60)
-        if resp.status_code != 200:
+        if resp.status_code == 409:
+            job_status = resp.json()
+            if job_status.get("error") == "already_exists":
+                Self.logger.warning(
+                    f"Video upload conflict ({resp.status_code}): already exists; reusing existing job {job_status.get('jobId')}")
+            else:
+                Self.logger.error(f"Video upload failed ({resp.status_code}): {resp.text}")
+                resp.raise_for_status()
+        elif resp.status_code != 200:
             Self.logger.error(f"Video upload failed ({resp.status_code}): {resp.text}")
-        resp.raise_for_status()
-        job_status = resp.json()
+            resp.raise_for_status()
+        else:
+            job_status = resp.json()
         Self.logger.debug(f"Video job started: {job_status}")
 
         # 3. Poll for completion via the SDK (this call is a normal authed GET)
